@@ -1,0 +1,40 @@
+{
+  "id": "patient_demo",
+  "age": 62,
+  "gender": "Male",
+  "conditions": [
+    "Type 2 Diabetes",
+    "Hypertension"
+  ],
+  "medications": [
+    "metformin",
+    "lisinopril"
+  ],
+  "lab_results": [
+    {
+      "test": "HbA1c",
+      "value": 8.2,
+      "unit": "%",
+      "date": "2026-04-30"
+    },
+    {
+      "test": "eGFR",
+      "value": 55.0,
+      "unit": "mL/min/1.73m2",
+      "date": "2026-04-30"
+    },
+    {
+      "test": "Fasting Glucose",
+      "value": 156.0,
+      "unit": "mg/dL",
+      "date": "2026-04-28"
+    },
+    {
+      "test": "BMI",
+      "value": 28.4,
+      "unit": "kg/m2",
+      "date": "2026-04-30"
+    }
+  ],
+  "medical_history": "Diagnosed with Type 2 Diabetes 8 years ago. Currently managed with metformin 1000 mg twice daily. Hypertension controlled with lisinopril 10 mg daily. No prior insulin use. No history of severe hypoglycaemia."
+}

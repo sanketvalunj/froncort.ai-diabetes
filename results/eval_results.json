@@ -1,0 +1,152 @@
+{
+  "total": 18,
+  "passed": 18,
+  "failed": 0,
+  "pass_rate": 1.0,
+  "cases": [
+    {
+      "case_id": "R1",
+      "category": "Retrieval",
+      "name": "Retriever returns results for a T2D-aligned trial",
+      "passed": true,
+      "diagnostic": "Retrieved 3 evidence items for trial NCT03301792.",
+      "duration_ms": 9880.114042025525
+    },
+    {
+      "case_id": "R2",
+      "category": "Retrieval",
+      "name": "Retriever scopes results to requested trial (no cross-trial bleed)",
+      "passed": true,
+      "diagnostic": "Retrieved 3 items for NCT03301792; all retrieved_from='trial': True.",
+      "duration_ms": 7940.6713339849375
+    },
+    {
+      "case_id": "R3",
+      "category": "Retrieval",
+      "name": "Patient evidence extraction covers all source types",
+      "passed": true,
+      "diagnostic": "Sources found: ['conditions', 'demographics', 'lab_results', 'medications']. All required sources present.",
+      "duration_ms": 0.08537503890693188
+    },
+    {
+      "case_id": "R4",
+      "category": "Retrieval",
+      "name": "Query builder includes HbA1c and eGFR lab values",
+      "passed": true,
+      "diagnostic": "HbA1c in queries: True. eGFR in queries: True. Queries: ['Type 2 diabetes clinical trial 62 year old Male patient', 'Type 2 Diabetes eligibility criteria', 'HbA1c 8.2% threshold criterion', 'eGFR 55.0 renal function criterion', 'patient taking metformin medication eligibility']",
+      "duration_ms": 0.01808302477002144
+    },
+    {
+      "case_id": "C1",
+      "category": "Criterion status",
+      "name": "Age in range \u2192 SUPPORTED",
+      "passed": true,
+      "diagnostic": "status=SUPPORTED, confidence=1.0.",
+      "duration_ms": 0.6922500324435532
+    },
+    {
+      "case_id": "C2",
+      "category": "Criterion status",
+      "name": "Age outside range \u2192 NOT_SUPPORTED",
+      "passed": true,
+      "diagnostic": "status=NOT_SUPPORTED.",
+      "duration_ms": 0.01895800232887268
+    },
+    {
+      "case_id": "C3",
+      "category": "Criterion status",
+      "name": "Missing lab \u2192 UNKNOWN (not NOT_SUPPORTED)",
+      "passed": true,
+      "diagnostic": "status=UNKNOWN. Unanswered questions: [\"What is the patient's most recent HBA1C value and date?\"].",
+      "duration_ms": 0.22716698003932834
+    },
+    {
+      "case_id": "C4",
+      "category": "Criterion status",
+      "name": "Exclusion criterion not triggered \u2192 SUPPORTED",
+      "passed": true,
+      "diagnostic": "status=SUPPORTED (eGFR 55 does not trigger exclusion < 30).",
+      "duration_ms": 0.14650000957772136
+    },
+    {
+      "case_id": "C5",
+      "category": "Criterion status",
+      "name": "Unparseable criterion \u2192 REQUIRES_CLINICAL_REVIEW",
+      "passed": true,
+      "diagnostic": "status=REQUIRES_CLINICAL_REVIEW.",
+      "duration_ms": 0.0499580055475235
+    },
+    {
+      "case_id": "A1",
+      "category": "Agent behaviour",
+      "name": "FilteringService removes non-recruiting trials",
+      "passed": true,
+      "diagnostic": "Filtered in: ['t1']. Reasons: {'t2': 'Status: Completed', 't3': 'Status: Suspended'}.",
+      "duration_ms": 0.49758300883695483
+    },
+    {
+      "case_id": "A2",
+      "category": "Agent behaviour",
+      "name": "RankingService caps output at TOP_K=3",
+      "passed": true,
+      "diagnostic": "Ranked 3 from 8 input trials.",
+      "duration_ms": 0.23891701130196452
+    },
+    {
+      "case_id": "A3",
+      "category": "Agent behaviour",
+      "name": "requires_human_review=True when UNKNOWN criteria present",
+      "passed": true,
+      "diagnostic": "requires_human_review=True, unknown_count=1.",
+      "duration_ms": 0.08712499402463436
+    },
+    {
+      "case_id": "D1",
+      "category": "Dataset coverage",
+      "name": "All 15 real patients parse without error",
+      "passed": true,
+      "diagnostic": "Parsed 15/15 successfully.",
+      "duration_ms": 2.3702079779468477
+    },
+    {
+      "case_id": "D2",
+      "category": "Dataset coverage",
+      "name": "All 36 real trials parse without error",
+      "passed": true,
+      "diagnostic": "Parsed 36/36 trials.",
+      "duration_ms": 4.201042000204325
+    },
+    {
+      "case_id": "D3",
+      "category": "Dataset coverage",
+      "name": "FilteringService reduces 36-trial set for age-62 patient",
+      "passed": true,
+      "diagnostic": "Before: 36, after: 12, excluded: 24.",
+      "duration_ms": 3.884167002979666
+    },
+    {
+      "case_id": "D4",
+      "category": "Dataset coverage",
+      "name": "All real patients have at least one parsed lab result",
+      "passed": true,
+      "diagnostic": "15/15 patients have lab results.",
+      "duration_ms": 1.3315409887582064
+    },
+    {
+      "case_id": "O1",
+      "category": "Output quality",
+      "name": "Report contains all coordinator-required sections and fields",
+      "passed": true,
+      "diagnostic": "14/14 checks passed.",
+      "duration_ms": 2.2874579881317914
+    },
+    {
+      "case_id": "O2",
+      "category": "Output quality",
+      "name": "Unanswered questions from UNKNOWN criteria surface in report",
+      "passed": true,
+      "diagnostic": "eGFR in report: True. Unanswered section present: True.",
+      "duration_ms": 0.05733297439292073
+    }
+  ]
+}
