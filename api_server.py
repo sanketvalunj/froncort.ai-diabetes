@@ -27,6 +27,15 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
+# ── Thread-count caps — set before any native library loads ──────────────────
+# PyTorch and OpenMP allocate per-thread memory. On Render's single-vCPU
+# free tier they default to the host's logical CPU count (~2–4), multiplying
+# RSS by that factor. Capping at 1 keeps memory predictable.
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
