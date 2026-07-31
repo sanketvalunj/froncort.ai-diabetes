@@ -1,39 +1,25 @@
 """
-FastAPI wrapper around the existing LangGraph clinical-trial pipeline.
+FastAPI wrapper around the LangGraph clinical-trial pipeline.
 
-Endpoints
----------
-GET  /patients
-    Returns the list of all patients from the dataset (id + demographics + labs).
+Startup strategy — zero heavy work at import time
+-------------------------------------------------
+When uvicorn does `import api_server`, Python executes every top-level
+statement in this file.  We keep those statements to an absolute minimum:
 
-POST /screen
-    Body: {"patient_id": "P-1842"}
-    Runs the full LangGraph pipeline and returns the structured result.
+  ALLOWED at module level   : FastAPI app creation, CORS middleware, Pydantic
+                              request/response models, route *decorators*.
+  NOT ALLOWED at module level: anything that imports sentence_transformers,
+                              faiss, langgraph, langchain, or reads files.
 
-GET  /report/{patient_id}/markdown
-    Returns the most recent Markdown report for the given patient.
+All heavy resources are initialised inside _ensure_loaded(), which is called
+by the first real API request — never during import.
 
-GET  /report/{patient_id}/pdf
-    Streams the most recent PDF report for the given patient.
-
-GET  /health
-    Returns {"status": "ok"} — used by Render health checks.
-
-Startup strategy
-----------------
-Nothing heavy is loaded at process start.  The FastAPI startup event is
-intentionally empty so Render's health check passes immediately with a tiny
-RSS footprint (~60 MB).
-
-Heavy resources are initialised lazily on the first real request:
-  - LLMClient          → on first /screen  (~negligible, API client only)
-  - Dataset JSON        → on first /patients or /screen  (~5 MB)
-  - SentenceTransformer → on first /screen retrieval step  (~200 MB)
-  - FAISS index         → on first /screen retrieval step  (~1 MB)
-  - Compiled LangGraph  → on first /screen  (~negligible)
-
-Each step is timed and printed so future startup bottlenecks are obvious in
-the Render log stream.
+Memory budget (Render free tier: 512 MB)
+-----------------------------------------
+  Import time           : ~60 MB  (FastAPI + Pydantic + structlog only)
+  After first /screen   : ~350 MB (+ LangChain client + SentenceTransformer
+                                     + FAISS index + compiled LangGraph)
+  Subsequent requests   : no additional allocation (everything cached)
 """
 
 import os
@@ -46,14 +32,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 
-from config.settings import settings
-from app.llm.client import LLMClient
-from app.models.state import AgentState
-from app.graph.workflow import run_workflow
-from app.retrieval.loader import load_dataset
-from app.retrieval.parser import parse_patient, parse_trials
-
-# ── CORS origins ──────────────────────────────────────────────────────────────
+# ── CORS ──────────────────────────────────────────────────────────────────────
 _raw_origins = os.environ.get("ALLOWED_ORIGINS", "*")
 _origins: List[str] = (
     [o.strip() for o in _raw_origins.split(",") if o.strip()]
@@ -77,18 +56,25 @@ app.add_middleware(
 )
 
 # ── Lazy singletons ───────────────────────────────────────────────────────────
-# All module-level variables start as None / empty.  Nothing is loaded until
-# _ensure_loaded() is called by the first real request.  The startup event
-# does NOT call _ensure_loaded() so the process stays lightweight at boot.
-
-_llm_client: Optional[LLMClient] = None
+# All None until _ensure_loaded() is called by the first real request.
+_llm_client = None
 _raw_patients: list = []
 _trials_raw: list = []
-_loaded: bool = False          # guard so we only run init once
+_settings = None
+_loaded: bool = False
+
+
+def _get_settings():
+    """Return the settings singleton, importing config only when first needed."""
+    global _settings
+    if _settings is None:
+        from config.settings import settings as _s
+        _settings = _s
+    return _settings
 
 
 def _timed(label: str):
-    """Context manager that prints a START / DONE line with elapsed seconds."""
+    """Simple context manager that prints elapsed time for each init step."""
     class _Timer:
         def __enter__(self):
             print(f"[startup] {label}...", flush=True)
@@ -104,42 +90,54 @@ def _timed(label: str):
 
 def _ensure_loaded() -> None:
     """
-    Initialise all lightweight singletons on first call; no-op thereafter.
+    Initialise all singletons on first call; no-op thereafter.
 
-    Heavy resources (SentenceTransformer, FAISS index) are NOT loaded here —
-    they are loaded lazily inside RetrievalService on the first /screen call.
-    This function only handles the truly cheap operations:
-      - constructing LLMClient (no network call, no model weights)
-      - reading and parsing the ~5 MB JSON dataset
+    This function only does the cheap work:
+      - import config.settings (pydantic-settings, no model weights)
+      - construct LLMClient (just a Python object, no network call)
+      - read + parse the JSON dataset (~5 MB)
+
+    The truly heavy objects (SentenceTransformer, FAISS index, LangGraph
+    compiled graph) are initialised lazily inside the service layer on the
+    first /screen request.
     """
     global _llm_client, _raw_patients, _trials_raw, _loaded
+
     if _loaded:
         return
 
-    print("[startup] First request — initialising lightweight singletons", flush=True)
+    print("[startup] First request — initialising singletons", flush=True)
     t_total = time.perf_counter()
 
+    with _timed("Loading config"):
+        from config.settings import settings
+        _settings_ref = settings  # local alias used below
+
     with _timed("Constructing LLMClient"):
-        _llm_client = LLMClient(settings.llm)
-        # Note: the underlying LangChain client is NOT created here.
-        # It is created lazily inside LLMClient.client on first generate() call.
+        from app.llm.client import LLMClient
+        _llm_client = LLMClient(_settings_ref.llm)
 
     with _timed("Loading dataset JSON"):
-        raw = load_dataset(settings.paths.data)
+        from app.retrieval.loader import load_dataset
+        raw = load_dataset(_settings_ref.paths.data)
         dataset = raw if isinstance(raw, dict) else {}
         _raw_patients = dataset.get("patients", raw if isinstance(raw, list) else [])
         trials_root = dataset.get("trials", [])
         _trials_raw = trials_root if isinstance(trials_root, list) else []
 
+    # Store settings for use by route handlers
+    global _settings
+    _settings = _settings_ref
+
     elapsed_total = time.perf_counter() - t_total
     print(
-        f"[startup] Lightweight init complete ({elapsed_total:.2f}s) — "
-        f"{len(_raw_patients)} patients, {len(_trials_raw)} trials loaded.",
+        f"[startup] Init complete ({elapsed_total:.2f}s) — "
+        f"{len(_raw_patients)} patients, {len(_trials_raw)} trials.",
         flush=True,
     )
     print(
-        "[startup] NOTE: SentenceTransformer + FAISS index will load on the "
-        "first /screen request (lazy). That request will be slower than subsequent ones.",
+        "[startup] NOTE: SentenceTransformer + FAISS + LangGraph will load "
+        "on the first /screen request (lazy).",
         flush=True,
     )
 
@@ -159,7 +157,6 @@ class ScreenRequest(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _find_raw_patient(patient_id: str) -> dict:
-    """Return the raw patient dict from the dataset or raise 404."""
     for p in _raw_patients:
         pid = p.get("patient_id") or p.get("id") or ""
         if str(pid) == patient_id:
@@ -168,10 +165,9 @@ def _find_raw_patient(patient_id: str) -> dict:
 
 
 def _latest_report(patient_id: str, extension: str) -> Path:
-    """Return the most-recently written report file for a patient, or raise 404."""
-    reports_dir = Path(settings.paths.reports)
-    pdf_dir = reports_dir.parent / "report_pdfs"
-    search_dir = reports_dir if extension == ".md" else pdf_dir
+    s = _get_settings()
+    reports_dir = Path(s.paths.reports)
+    search_dir = reports_dir if extension == ".md" else reports_dir.parent / "report_pdfs"
     candidates = sorted(
         search_dir.glob(f"{patient_id}_*{extension}"),
         key=lambda p: p.stat().st_mtime,
@@ -180,24 +176,23 @@ def _latest_report(patient_id: str, extension: str) -> Path:
     if not candidates:
         raise HTTPException(
             status_code=404,
-            detail=f"No {extension} report found for patient '{patient_id}'. "
-                   "Run /screen first.",
+            detail=f"No {extension} report found for patient '{patient_id}'. Run /screen first.",
         )
     return candidates[0]
 
 
 def _patient_summary(raw: dict) -> dict:
-    """Convert a raw dataset patient into a JSON-serialisable summary dict."""
+    from app.retrieval.parser import parse_patient
     p = parse_patient(raw)
     demo = raw.get("demographics", {})
     return {
-        "patient_id":   p.id,
-        "name":         demo.get("name", ""),
-        "age":          p.age,
-        "gender":       p.gender,
-        "conditions":   p.conditions,
-        "medications":  p.medications,
-        "lab_results":  [
+        "patient_id":  p.id,
+        "name":        demo.get("name", ""),
+        "age":         p.age,
+        "gender":      p.gender,
+        "conditions":  p.conditions,
+        "medications": p.medications,
+        "lab_results": [
             {
                 "test":      lr.test,
                 "value":     lr.value,
@@ -207,31 +202,24 @@ def _patient_summary(raw: dict) -> dict:
             }
             for lr in p.lab_results
         ],
-        "as_of_date":   raw.get("as_of_date", ""),
+        "as_of_date": raw.get("as_of_date", ""),
     }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Startup event
+# Startup event — intentionally empty
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
 async def startup_event():
     """
-    Intentionally lightweight — do NOT load models or datasets here.
+    Do NOT load any models, read any files, or import any heavy packages here.
 
-    Render hits /health immediately after the process starts.  If we block
-    the event loop loading a 200 MB model, the health check times out and
-    Render kills the instance before it ever serves a request.
-
-    All heavy resources are deferred to the first real API call via
-    _ensure_loaded().
+    Render hits /health immediately after the process starts.  Any blocking
+    work here delays the port bind and causes Render to report
+    "No open ports detected".  All heavy work is deferred to first request.
     """
-    print("[startup] FastAPI startup complete — process is ready (lazy mode).", flush=True)
-    print(f"[startup] LLM provider: {settings.llm.provider}, model: {settings.llm.model}", flush=True)
-    print(f"[startup] Embedding model: {settings.embeddings.model}", flush=True)
-    print(f"[startup] Data path: {settings.paths.data}", flush=True)
-    print(f"[startup] Vector store: {settings.paths.vector_store}", flush=True)
+    print("[startup] FastAPI startup complete — ready to accept connections.", flush=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -240,7 +228,7 @@ async def startup_event():
 
 @app.get("/health", summary="Health check for Render")
 def health_check():
-    """Returns immediately without touching any heavy resource."""
+    """Returns instantly — no heavy resources touched."""
     return JSONResponse({"status": "ok"})
 
 
@@ -255,35 +243,40 @@ def screen_patient(body: ScreenRequest):
     _ensure_loaded()
 
     t0 = time.perf_counter()
+    s = _get_settings()
 
     # 1. Parse patient
+    from app.retrieval.parser import parse_patient, parse_trials
     raw_patient = _find_raw_patient(body.patient_id)
     patient = parse_patient(raw_patient)
 
     # 2. Parse all trials
-    with _timed(f"Parsing trials for patient {body.patient_id}"):
+    with _timed(f"Parsing trials for {body.patient_id}"):
         trials = parse_trials(_trials_raw)
     if not trials:
         raise HTTPException(status_code=500, detail="Trial dataset is empty or failed to parse.")
 
-    # 3. Run the full LangGraph pipeline
-    # Note: on the FIRST request this also triggers:
-    #   - LangChain client construction (LLMClient.client property)
-    #   - SentenceTransformer load (~200 MB, ~5–15 s on Render free tier)
-    #   - FAISS index load from disk (~1 MB, fast)
-    #   - LangGraph workflow compilation (once only, then cached)
+    # 3. Build initial state
+    from app.models.state import AgentState
     initial_state = AgentState(patient=patient, all_trials=trials)
+
+    # 4. Run LangGraph pipeline
+    # On the FIRST call this triggers (once only, then cached):
+    #   - LangChain client construction
+    #   - SentenceTransformer load (~200 MB, ~5–15 s on Render free tier)
+    #   - FAISS index read from disk (~1 MB)
+    #   - LangGraph StateGraph compilation
+    from app.graph.workflow import run_workflow
     try:
         print(f"[screen] Running pipeline for patient {body.patient_id}", flush=True)
-        final_state = run_workflow(settings, _llm_client, initial_state)
+        final_state = run_workflow(s, _llm_client, initial_state)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Pipeline error: {exc}") from exc
 
     elapsed = time.perf_counter() - t0
     print(f"[screen] Pipeline complete for {body.patient_id} ({elapsed:.2f}s)", flush=True)
 
-    # 4. Serialise AgentState → JSON-friendly dict
-    result = {
+    return {
         "patient":         patient.model_dump(mode="json"),
         "ranked_trials":   [r.model_dump(mode="json") for r in final_state.ranked_trials],
         "evaluations": {
@@ -296,7 +289,6 @@ def screen_patient(body: ScreenRequest):
         "trace_id":        final_state.trace_id,
         "run_timestamp":   final_state.run_timestamp.isoformat(),
     }
-    return result
 
 
 @app.get(

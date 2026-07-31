@@ -1,25 +1,31 @@
 """
-EmbeddingService — wraps SentenceTransformer with a process-level singleton cache.
+EmbeddingService — defers SentenceTransformer import and load to first use.
 
-The SentenceTransformer model is ~90 MB on disk and ~200 MB in RAM.  Loading it
-more than once per process wastes memory and adds latency.  We store one model
-instance per model-name in ``_MODEL_CACHE`` so every ``EmbeddingService``
-created with the same model name shares the exact same object.
+sentence_transformers pulls in torch, transformers, and tokenizers at import
+time which alone can consume 200+ MB.  By moving the import inside the function
+that actually needs it, the module itself is free to import with zero cost.
+
+The loaded model is stored in a process-level cache so it is created exactly
+once per model name, never per request.
 """
 
-from typing import Dict, List
+from typing import TYPE_CHECKING, Dict, List
 
 import numpy as np
-from sentence_transformers import SentenceTransformer
+
+if TYPE_CHECKING:
+    # Only used for type hints — never executed at runtime during import
+    from sentence_transformers import SentenceTransformer as _ST
 
 # Process-level cache: model_name → SentenceTransformer instance.
-# Populated lazily on first embed() call; never recreated.
-_MODEL_CACHE: Dict[str, SentenceTransformer] = {}
+_MODEL_CACHE: Dict[str, "_ST"] = {}
 
 
-def _get_model(model_name: str) -> SentenceTransformer:
-    """Return the cached model, loading it once if necessary."""
+def _get_model(model_name: str) -> "_ST":
+    """Load and cache the model on first call; return the cached instance thereafter."""
     if model_name not in _MODEL_CACHE:
+        # Import is deferred here — only runs on first actual embed() call
+        from sentence_transformers import SentenceTransformer
         _MODEL_CACHE[model_name] = SentenceTransformer(model_name)
     return _MODEL_CACHE[model_name]
 
@@ -27,10 +33,10 @@ def _get_model(model_name: str) -> SentenceTransformer:
 class EmbeddingService:
     def __init__(self, model_name: str):
         self.model_name = model_name
-        # Do NOT load the model here — defer until first use.
+        # No import, no model load here.
 
     @property
-    def model(self) -> SentenceTransformer:
+    def model(self) -> "_ST":
         """Lazy accessor — loads and caches the model on first call."""
         return _get_model(self.model_name)
 

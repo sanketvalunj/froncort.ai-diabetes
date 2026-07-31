@@ -1,8 +1,14 @@
+"""
+FAISSVectorStore — defers faiss import to first use.
+
+faiss allocates internal state at import time.  Moving the import inside the
+methods that need it means the module is free to import with zero overhead.
+"""
+
 import pickle
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-import faiss
 import numpy as np
 
 
@@ -13,18 +19,21 @@ class FAISSVectorStore:
         self.metadata: List[Dict] = []
 
     def build(self, embeddings: np.ndarray, metadata: List[Dict]) -> None:
+        import faiss  # deferred
         dimension = embeddings.shape[1]
         self.index = faiss.IndexFlatL2(dimension)
         self.index.add(embeddings.astype("float32"))
         self.metadata = metadata
 
     def save(self) -> None:
+        import faiss  # deferred
         self.index_path.mkdir(parents=True, exist_ok=True)
         faiss.write_index(self.index, str(self.index_path / "trial_index.faiss"))
         with open(self.index_path / "metadata.pkl", "wb") as f:
             pickle.dump(self.metadata, f)
 
     def load(self) -> None:
+        import faiss  # deferred
         self.index = faiss.read_index(str(self.index_path / "trial_index.faiss"))
         with open(self.index_path / "metadata.pkl", "rb") as f:
             self.metadata = pickle.load(f)

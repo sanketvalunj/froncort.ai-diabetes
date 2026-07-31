@@ -1,22 +1,13 @@
 """
 LangGraph workflow — build once, run many times.
 
-``build_workflow`` is the expensive step: it instantiates all five service
-objects (FilteringService, RetrievalService, EvaluationService, RankingService,
-ReportService) and then compiles the StateGraph.  None of that needs to happen
-more than once per process.
-
-We keep one compiled graph per (settings_id, llm_client_id) pair in
-``_WORKFLOW_CACHE``.  In practice there is always exactly one entry because
-both objects are module-level singletons in api_server.py.
+All heavy imports (langgraph, langchain) are deferred inside functions so that
+importing this module has zero startup cost.  The compiled graph is cached in
+_WORKFLOW_CACHE after first build and reused for every subsequent /screen call.
 """
 
-from typing import Dict, Tuple, Any
+from typing import Any, Dict, Tuple
 
-from langgraph.graph import END, StateGraph
-
-from app.graph.nodes import make_nodes
-from app.models.state import AgentState
 from app.utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -27,6 +18,12 @@ _WORKFLOW_CACHE: Dict[Tuple[int, int], Any] = {}
 
 def _build_compiled_workflow(settings, llm_client):
     """Compile the StateGraph with all service nodes. Called at most once."""
+    # Deferred imports — langgraph pulls in heavy dependencies
+    from langgraph.graph import END, StateGraph
+
+    from app.graph.nodes import make_nodes
+    from app.models.state import AgentState
+
     nodes = make_nodes(settings, llm_client)
 
     graph = StateGraph(AgentState)
@@ -62,7 +59,7 @@ def build_workflow(settings, llm_client):
     return _get_compiled_workflow(settings, llm_client)
 
 
-def run_workflow(settings, llm_client, initial_state: AgentState) -> AgentState:
+def run_workflow(settings, llm_client, initial_state):
     """Execute the cached compiled workflow against *initial_state*."""
     workflow = _get_compiled_workflow(settings, llm_client)
 
@@ -72,6 +69,9 @@ def run_workflow(settings, llm_client, initial_state: AgentState) -> AgentState:
              trace_id=initial_state.trace_id)
 
     result = workflow.invoke(initial_state)
+
+    # Import AgentState here too since we deferred it above
+    from app.models.state import AgentState
 
     if isinstance(result, AgentState):
         final_state = result
