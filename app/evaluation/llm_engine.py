@@ -97,10 +97,16 @@ class LLMEvaluator:
             )
 
         except Exception as exc:  # noqa: BLE001
+            # Log the full trace for operators; never expose it in the report.
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "LLM evaluation failed for criterion %s: %s",
+                criterion.id, exc, exc_info=True,
+            )
             return CriterionEvaluation(
                 criterion_id=criterion.id,
                 status=CriterionStatus.REQUIRES_CLINICAL_REVIEW,
-                reasoning=f"LLM evaluation failed: {exc}",
+                reasoning="LLM evaluation unavailable — criterion requires manual clinical review.",
                 evidence_used=evidence,
                 confidence=0.0,
                 evaluator_type=_ERROR_EVALUATOR_TYPE,

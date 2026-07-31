@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic_settings import BaseSettings
 from pydantic import BaseModel
 from pathlib import Path
@@ -38,10 +39,8 @@ class Settings(BaseSettings):
     retrieval: RetrievalSettings = RetrievalSettings()
     evaluation: EvaluationSettings = EvaluationSettings()
     paths: PathSettings = PathSettings()
-    openai_api_key: str = ""
-    anthropic_api_key: str = ""
-    google_api_key: str = ""
-    xai_api_key: str = ""
+    google_api_key: Optional[str] = None
+    xai_api_key: Optional[str] = None
 
     model_config = {"env_file": ".env", "env_nested_delimiter": "__"}
 

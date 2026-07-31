@@ -43,6 +43,52 @@ _FIT_BADGE = {
 }
 
 
+def _format_evidence(evidence_list) -> str:
+    """
+    Convert a list of Evidence objects into a concise, human-readable string
+    suitable for a Markdown table cell.
+
+    Rules:
+    - Show the test/observation name capitalised, not the raw source field.
+    - Append the date in parentheses when present.
+    - For medication evidence, prefix with "Medication:".
+    - Never show raw UUIDs or internal source_id values.
+    - Deduplicate identical labels.
+    - Return "—" when the list is empty.
+    """
+    if not evidence_list:
+        return "—"
+
+    seen: set = set()
+    parts = []
+    for e in evidence_list:
+        src = e.source.lower()
+        text_lower = e.text.lower()
+
+        # Derive a readable label from the evidence text or source
+        if "medication" in src or "medication" in text_lower:
+            # e.g. "Medication: Empagliflozin"
+            name_part = e.text.split(":", 1)[-1].strip() if ":" in e.text else e.text.strip()
+            label = f"Medication: {name_part}" if name_part else "Medication"
+        elif "lab" in src or any(kw in text_lower for kw in ("hba1c", "a1c", "egfr", "gfr", "bmi", "glucose", "creatinine")):
+            # e.g. "HbA1c (2026-04-23)"
+            name_part = e.text.split(":", 1)[0].strip() if ":" in e.text else e.source.upper()
+            label = name_part
+            if e.date:
+                label += f" ({e.date})"
+        else:
+            # Generic: capitalise source, add date
+            label = e.source.replace("_", " ").title()
+            if e.date:
+                label += f" ({e.date})"
+
+        if label not in seen:
+            seen.add(label)
+            parts.append(label)
+
+    return "; ".join(parts) if parts else "—"
+
+
 class ReportGenerator:
     def generate(
         self,
@@ -147,22 +193,40 @@ class ReportGenerator:
             # ── Criterion table ───────────────────────────────────────────
             trial_evals = evaluations.get(ranking.trial_id, [])
             if trial_evals:
+                # Detect whether any criteria failed LLM evaluation so we can
+                # show a single deduplicated notice instead of repeating it per row.
+                _llm_error_msg = "LLM evaluation unavailable — criterion requires manual clinical review."
+                llm_unavailable_ids = [
+                    ev.criterion_id for ev in trial_evals
+                    if ev.evaluator_type == "llm_engine_error"
+                ]
+
                 lines.append("#### Criterion Evaluation\n")
-                lines.append("| Criterion ID | Status | Evaluator | Reasoning | Evidence Used |")
-                lines.append("|:-------------|:------:|:---------:|:----------|:--------------|")
+                lines.append("| Criterion | Status | Evaluator | Reasoning | Evidence |")
+                lines.append("|:----------|:------:|:---------:|:----------|:---------|")
                 for ev in trial_evals:
-                    icon      = _STATUS_ICON.get(ev.status, "?")
-                    reasoning = ev.reasoning.replace("|", "\\|")
-                    # Collect evidence source labels, IDs, and dates
-                    ev_refs = "; ".join(
-                        f"`{e.source}`"
-                        + (f" [{e.evidence_id}]" if e.evidence_id else "")
-                        + (f" ({e.date})" if e.date else "")
-                        for e in ev.evidence_used
-                    ) or "—"
+                    icon = _STATUS_ICON.get(ev.status, "?")
+                    # Clean reasoning: strip pipe chars that break Markdown tables,
+                    # cap length so cells don't overflow the page.
+                    reasoning = ev.reasoning.replace("|", "/")
+                    if ev.evaluator_type == "llm_engine_error":
+                        reasoning = "LLM service unavailable — manual review required."
+                    elif len(reasoning) > 200:
+                        reasoning = reasoning[:197] + "..."
+                    # Build human-readable evidence refs (no raw UUIDs)
+                    ev_refs = _format_evidence(ev.evidence_used)
                     lines.append(
                         f"| `{ev.criterion_id}` | {icon} {ev.status.value} "
                         f"| {ev.evaluator_type} | {reasoning} | {ev_refs} |"
+                    )
+
+                # Single deduplicated LLM-unavailable notice
+                if llm_unavailable_ids:
+                    lines.append(
+                        "\n> **Note:** Some criteria requiring LLM evaluation "
+                        f"({', '.join(f'`{c}`' for c in llm_unavailable_ids)}) "
+                        "could not be automatically assessed because the LLM service was unavailable. "
+                        "Please review these criteria manually."
                     )
 
                 # ── Unanswered questions ──────────────────────────────────

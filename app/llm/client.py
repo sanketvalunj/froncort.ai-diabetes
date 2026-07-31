@@ -16,38 +16,35 @@ class LLMClient:
         if self._client is None:
             provider = self.settings.provider
 
-            if provider == "openai":
-                from langchain_openai import ChatOpenAI
-                self._client = ChatOpenAI(
-                    model=self.settings.model,
-                    temperature=self.settings.temperature,
-                )
-
-            elif provider == "anthropic":
-                from langchain_anthropic import ChatAnthropic
-                self._client = ChatAnthropic(
-                    model=self.settings.model,
-                    temperature=self.settings.temperature,
-                )
-
-            elif provider == "google":
+            if provider == "google":
                 from langchain_google_genai import ChatGoogleGenerativeAI
+                import os
+                # Prefer explicitly set key from settings; fall back to env
+                api_key = self._settings.google_api_key or os.environ.get("GOOGLE_API_KEY")
+                if not api_key:
+                    raise ValueError("GOOGLE_API_KEY not found in .env or environment")
                 self._client = ChatGoogleGenerativeAI(
                     model=self.settings.model,
                     temperature=self.settings.temperature,
+                    google_api_key=api_key,
                 )
 
             elif provider == "xai":
                 from langchain_xai import ChatXAI
+                import os
+                api_key = self._settings.xai_api_key or os.environ.get("XAI_API_KEY")
+                if not api_key:
+                    raise ValueError("XAI_API_KEY not found in .env or environment")
                 self._client = ChatXAI(
                     model=self.settings.model,
                     temperature=self.settings.temperature,
+                    xai_api_key=api_key,
                 )
 
             else:
                 raise ValueError(
                     f"Unknown LLM provider: {provider!r}. "
-                    f"Supported providers: openai, anthropic, google, xai"
+                    f"Supported providers: google, xai"
                 )
 
         return self._client

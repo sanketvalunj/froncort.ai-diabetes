@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: clinical-trial-api
+    runtime: python
+    rootDir: .
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api_server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: LLM__PROVIDER
+        value: google
+      - key: LLM__MODEL
+        value: gemini-2.0-flash
+      # Set these in the Render dashboard — do NOT commit real values here
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false   # e.g. https://your-app.vercel.app

@@ -1,18 +1,32 @@
+# ── Web server ────────────────────────────────────────────────────────────────
+fastapi>=0.112.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
+
+# ── LangGraph pipeline ────────────────────────────────────────────────────────
 langgraph>=0.2.0
 langchain>=0.3.0
-langchain-openai>=0.2.0
-langchain-anthropic>=0.2.0
 langchain-google-genai>=2.0.0
 langchain-xai>=0.1.0
+
+# ── Retrieval / embeddings ────────────────────────────────────────────────────
 faiss-cpu>=1.8.0
 sentence-transformers>=3.0.0
+
+# ── Config / validation ───────────────────────────────────────────────────────
 pydantic>=2.7.0
 pydantic-settings>=2.4.0
-typer>=0.12.0
 python-dotenv>=1.0.0
-structlog>=24.0.0
+
+# ── Reporting ─────────────────────────────────────────────────────────────────
+reportlab>=4.0.0
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
 numpy>=1.26.0
+structlog>=24.0.0
+typer>=0.12.0
+rich>=13.0.0
+
+# ── Dev / testing (not installed on Render) ───────────────────────────────────
 pytest>=8.0.0
 pytest-mock>=3.14.0
-rich>=13.0.0
-reportlab>=4.0.0
