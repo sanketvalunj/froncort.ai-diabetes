@@ -227,8 +227,10 @@ async def startup_event():
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.get("/health", summary="Health check for Render")
+@app.get("/", include_in_schema=False)
 def health_check():
-    """Returns instantly — no heavy resources touched."""
+    """Returns instantly — no heavy resources touched.
+    Handles both / and /health so Render's default health probe succeeds."""
     return JSONResponse({"status": "ok"})
 
 
