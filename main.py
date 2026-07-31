@@ -119,7 +119,7 @@ def run(
 
     typer.echo(f"\nCompleted in {elapsed_ms:.0f} ms — {len(final_state.ranked_trials)} trial(s) ranked.")
     for idx, r in enumerate(final_state.ranked_trials, start=1):
-        typer.echo(f"  {idx}. [{r.overall_status.value}] {r.title} (score: {r.score:.3f})")
+        typer.echo(f"  {idx}. [{r.clinical_fit.value}] {r.title} (score: {r.score:.3f})")
 
 
 @app.command()

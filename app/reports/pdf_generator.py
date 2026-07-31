@@ -179,6 +179,11 @@ def _build_styles() -> dict:
 # Column names that should use the small monospace style (evidence UUIDs etc.)
 _SMALL_COLS = {"Evidence Used", "evidence used", "Reasoning", "reasoning"}
 
+# Maximum characters allowed in a single table cell before truncation.
+# This prevents a single very-long reasoning string from producing a cell
+# taller than one page and causing a ReportLab LayoutError.
+_MAX_CELL_CHARS = 400
+
 
 def _render_table(header: List[str], rows: List[List[str]], styles_map: dict) -> Table:
     """Build a ReportLab Table from parsed Markdown table data."""
@@ -186,6 +191,9 @@ def _render_table(header: List[str], rows: List[List[str]], styles_map: dict) ->
 
     def cell(text: str, is_header: bool = False) -> Paragraph:
         text = _clean(text.strip())
+        # Truncate very long cells so no single row exceeds one page height.
+        if not is_header and len(text) > _MAX_CELL_CHARS:
+            text = text[:_MAX_CELL_CHARS] + " [...]"
         style = styles_map["th"] if is_header else (
             styles_map["td_small"] if use_small else styles_map["td"]
         )
@@ -202,7 +210,9 @@ def _render_table(header: List[str], rows: List[List[str]], styles_map: dict) ->
     col_w  = page_w / len(header)
     col_widths = [col_w] * len(header)
 
-    tbl = Table(data, colWidths=col_widths, repeatRows=1)
+    # splitByRow=1 lets ReportLab break large tables across pages;
+    # repeatRows=1 repeats the header on each page.
+    tbl = Table(data, colWidths=col_widths, repeatRows=1, splitByRow=1)
     tbl.setStyle(TableStyle([
         # Header row
         ("BACKGROUND",  (0, 0), (-1, 0), colors.HexColor("#e8eaf6")),

@@ -14,16 +14,42 @@ class LLMClient:
     @property
     def client(self):
         if self._client is None:
-            if self.settings.provider == "openai":
+            provider = self.settings.provider
+
+            if provider == "openai":
                 from langchain_openai import ChatOpenAI
-                self._client = ChatOpenAI(model=self.settings.model,
-                                          temperature=self.settings.temperature)
-            elif self.settings.provider == "anthropic":
+                self._client = ChatOpenAI(
+                    model=self.settings.model,
+                    temperature=self.settings.temperature,
+                )
+
+            elif provider == "anthropic":
                 from langchain_anthropic import ChatAnthropic
-                self._client = ChatAnthropic(model=self.settings.model,
-                                             temperature=self.settings.temperature)
+                self._client = ChatAnthropic(
+                    model=self.settings.model,
+                    temperature=self.settings.temperature,
+                )
+
+            elif provider == "google":
+                from langchain_google_genai import ChatGoogleGenerativeAI
+                self._client = ChatGoogleGenerativeAI(
+                    model=self.settings.model,
+                    temperature=self.settings.temperature,
+                )
+
+            elif provider == "xai":
+                from langchain_xai import ChatXAI
+                self._client = ChatXAI(
+                    model=self.settings.model,
+                    temperature=self.settings.temperature,
+                )
+
             else:
-                raise ValueError(f"Unknown LLM provider: {self.settings.provider!r}")
+                raise ValueError(
+                    f"Unknown LLM provider: {provider!r}. "
+                    f"Supported providers: openai, anthropic, google, xai"
+                )
+
         return self._client
 
     def generate(self, prompt: str) -> str:

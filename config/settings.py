@@ -14,8 +14,10 @@ class EmbeddingSettings(BaseModel):
 
 
 class RetrievalSettings(BaseModel):
-    top_k: int = 5
+    top_k: int = 2           # max evidence chunks retrieved per criterion query
     score_threshold: float = 0.3
+    chunk_size: int = 250    # max tokens per indexed text chunk
+    chunk_overlap: int = 30  # token overlap between adjacent chunks
 
 
 class EvaluationSettings(BaseModel):
@@ -38,6 +40,8 @@ class Settings(BaseSettings):
     paths: PathSettings = PathSettings()
     openai_api_key: str = ""
     anthropic_api_key: str = ""
+    google_api_key: str = ""
+    xai_api_key: str = ""
 
     model_config = {"env_file": ".env", "env_nested_delimiter": "__"}
 

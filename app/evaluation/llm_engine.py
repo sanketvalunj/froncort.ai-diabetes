@@ -1,22 +1,32 @@
 """
-LLM-based criterion evaluator.
+LLM-based criterion evaluator — token-optimised.
 
-Handles: MEDICATION, CONDITION (and anything else routed to it).
-Maps LLM response status strings to the assignment's CriterionStatus vocabulary.
-Falls back to UNKNOWN on parse errors, REQUIRES_CLINICAL_REVIEW on other errors.
+Design:
+  - Patient fields sent to the LLM are scoped to what the criterion type actually needs:
+      MEDICATION  → age + medications only
+      CONDITION   → age + conditions only
+      (other LLM) → age + gender only
+  - Evidence is serialised as compact JSON objects (id / src / text) instead of
+    numbered prose lines, saving 10–20 tokens per item.
+  - The prompt returns only three fields: state / reason (≤20 words) / evidence_ids.
+  - Full backward-compat fallback: also accepts the old "status"/"reasoning" keys so
+    that all existing mock-based tests continue to pass without modification.
+
+Token budget target: 300–500 input tokens per call.
 """
 
+import json
 from typing import List
 
 from config.prompts import CRITERION_EVAL_PROMPT
 from app.models.evaluation import CriterionEvaluation, CriterionStatus, Evidence
 from app.models.patient import Patient
-from app.models.trial import Criterion
+from app.models.trial import Criterion, CriterionType
 
 _EVALUATOR_TYPE       = "llm_engine"
 _ERROR_EVALUATOR_TYPE = "llm_engine_error"
 
-# Map the LLM response vocabulary → CriterionStatus
+# Map LLM response vocabulary → CriterionStatus (covers new and legacy keys)
 _STATUS_MAP = {
     "SUPPORTED":                CriterionStatus.SUPPORTED,
     "NOT_SUPPORTED":            CriterionStatus.NOT_SUPPORTED,
@@ -43,20 +53,38 @@ class LLMEvaluator:
     ) -> CriterionEvaluation:
         try:
             prompt = CRITERION_EVAL_PROMPT.format(
-                criterion_description=criterion.description,
                 criterion_type="Inclusion" if criterion.is_inclusion else "Exclusion",
-                patient_summary=self._build_patient_summary(patient),
-                evidence_text=self._build_evidence_text(evidence),
+                criterion_description=criterion.description,
+                patient_fields=self._build_patient_fields(criterion, patient),
+                evidence_json=self._build_evidence_json(evidence),
             )
             raw: dict = self._llm_client.generate_structured(prompt)
 
-            status_raw = raw.get("status", "REQUIRES_CLINICAL_REVIEW").upper().strip()
-            status     = _STATUS_MAP.get(status_raw, CriterionStatus.REQUIRES_CLINICAL_REVIEW)
-            reasoning  = str(raw.get("reasoning", "No reasoning provided."))
-            confidence = max(0.0, min(1.0, float(raw.get("confidence", 0.0))))
-            questions  = raw.get("unanswered_questions", [])
+            # ── Parse response — new shape (state/reason/evidence_ids)
+            #    with fallback to legacy shape (status/reasoning/confidence) ──
+            status_raw = (
+                raw.get("state") or raw.get("status") or "REQUIRES_CLINICAL_REVIEW"
+            ).upper().strip()
+            status = _STATUS_MAP.get(status_raw, CriterionStatus.REQUIRES_CLINICAL_REVIEW)
+
+            reasoning = str(raw.get("reason") or raw.get("reasoning") or "No reasoning provided.")
+
+            # confidence: new response omits it; default 0.8 when resolved, 0.0 otherwise
+            if "confidence" in raw:
+                confidence = max(0.0, min(1.0, float(raw["confidence"])))
+            else:
+                confidence = 0.8 if status in (
+                    CriterionStatus.SUPPORTED, CriterionStatus.NOT_SUPPORTED
+                ) else 0.0
+
+            # unanswered questions: not in new shape, infer from status
+            questions: List[str] = raw.get("unanswered_questions", [])
             if isinstance(questions, str):
                 questions = [questions]
+            if not questions and status in (
+                CriterionStatus.UNKNOWN, CriterionStatus.REQUIRES_CLINICAL_REVIEW
+            ):
+                questions = ["Automated evaluation unavailable — please review manually."]
 
             return CriterionEvaluation(
                 criterion_id=criterion.id,
@@ -81,26 +109,60 @@ class LLMEvaluator:
                 ],
             )
 
-    # ── Helpers ───────────────────────────────────────────────────────────────
+    # ── Patient field scoping ─────────────────────────────────────────────────
 
     @staticmethod
-    def _build_patient_summary(patient: Patient) -> str:
-        lines = [f"Age: {patient.age}", f"Gender: {patient.gender}"]
-        if patient.conditions:
-            lines.append(f"Conditions: {', '.join(patient.conditions)}")
-        if patient.medications:
-            lines.append(f"Medications: {', '.join(patient.medications)}")
-        key_labs = [
-            f"{lr.test}: {lr.value} {lr.unit}"
-            for lr in patient.lab_results
-            if any(k in lr.test.lower() for k in ("hba1c", "a1c", "egfr", "gfr"))
-        ]
-        if key_labs:
-            lines.append(f"Key labs: {'; '.join(key_labs)}")
-        return "\n".join(lines)
+    def _build_patient_fields(criterion: Criterion, patient: Patient) -> str:
+        """
+        Return only the patient fields relevant to this criterion type.
+
+        MEDICATION  → age + medications list (omit conditions, labs — not needed)
+        CONDITION   → age + conditions list  (omit medications, labs — not needed)
+        anything else → age + gender only    (minimal anchor)
+
+        Serialised as a compact one-line JSON string to save tokens.
+        """
+        if criterion.type == CriterionType.MEDICATION:
+            fields: dict = {"age": patient.age}
+            if patient.medications:
+                fields["meds"] = patient.medications
+            else:
+                fields["meds"] = []
+
+        elif criterion.type == CriterionType.CONDITION:
+            fields = {"age": patient.age}
+            if patient.conditions:
+                # Truncate to first 5 conditions — very long lists add tokens without value
+                fields["conditions"] = patient.conditions[:5]
+            else:
+                fields["conditions"] = []
+
+        else:
+            # Minimal anchor for any other LLM-routed criterion type
+            fields = {"age": patient.age, "gender": patient.gender}
+
+        return json.dumps(fields, separators=(",", ":"))
+
+    # ── Evidence serialisation ────────────────────────────────────────────────
 
     @staticmethod
-    def _build_evidence_text(evidence: List[Evidence]) -> str:
+    def _build_evidence_json(evidence: List[Evidence]) -> str:
+        """
+        Serialise evidence as a compact JSON array.
+
+        Each item: {"id":"<evidence_id or idx>","src":"<source>","text":"<text>"}
+        Text is truncated to 120 characters to bound token usage per item.
+        Returns "[]" when there is no evidence.
+        """
         if not evidence:
-            return "No supporting evidence available."
-        return "\n".join(f"{i+1}. {e.text}" for i, e in enumerate(evidence))
+            return "[]"
+
+        items = []
+        for idx, ev in enumerate(evidence):
+            eid = ev.evidence_id if ev.evidence_id else str(idx)
+            items.append({
+                "id":   eid,
+                "src":  ev.source,
+                "text": ev.text[:120],
+            })
+        return json.dumps(items, separators=(",", ":"))
