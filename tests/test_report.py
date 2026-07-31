@@ -86,7 +86,13 @@ def test_criterion_status_labels_present(gen, patient):
     assert "REQUIRES_CLINICAL_REVIEW" in md
 
 def test_evidence_source_present(gen, patient):
-    """Evidence source identifiers must appear in the criterion table."""
+    """Lab evidence must appear in the criterion table.
+
+    _format_evidence() converts the raw source field ('lab_results') into a
+    human-readable label such as 'HbA1c (2024-01-15)'.  The important thing is
+    that the evidence text and date are visible in the rendered Markdown — not
+    the internal source key.
+    """
     from app.models.evaluation import Evidence
     ev = CriterionEvaluation(
         criterion_id="c1", status=CriterionStatus.SUPPORTED,
@@ -97,7 +103,9 @@ def test_evidence_source_present(gen, patient):
     )
     rankings = [make_ranking("t1", "A", CriterionStatus.SUPPORTED, score=1.0, sup=1)]
     md, _    = gen.generate(patient, rankings, {"t1": [ev]})
-    assert "lab_results" in md
+    # The evidence label rendered by _format_evidence is "HbA1c (2024-01-15)"
+    assert "HbA1c" in md
+    assert "2024-01-15" in md
 
 def test_unanswered_questions_shown(gen, patient):
     """UNKNOWN criteria must surface their questions in the report."""

@@ -19,11 +19,25 @@ GET  /report/{patient_id}/pdf
 GET  /health
     Returns {"status": "ok"} — used by Render health checks.
 
-This file contains NO business logic — every heavy-lifting call goes straight
-into the existing services and workflow already implemented in app/.
+Startup strategy
+----------------
+Nothing heavy is loaded at process start.  The FastAPI startup event is
+intentionally empty so Render's health check passes immediately with a tiny
+RSS footprint (~60 MB).
+
+Heavy resources are initialised lazily on the first real request:
+  - LLMClient          → on first /screen  (~negligible, API client only)
+  - Dataset JSON        → on first /patients or /screen  (~5 MB)
+  - SentenceTransformer → on first /screen retrieval step  (~200 MB)
+  - FAISS index         → on first /screen retrieval step  (~1 MB)
+  - Compiled LangGraph  → on first /screen  (~negligible)
+
+Each step is timed and printed so future startup bottlenecks are obvious in
+the Render log stream.
 """
 
 import os
+import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -40,9 +54,6 @@ from app.retrieval.loader import load_dataset
 from app.retrieval.parser import parse_patient, parse_trials
 
 # ── CORS origins ──────────────────────────────────────────────────────────────
-# In production set ALLOWED_ORIGINS to your Vercel URL, e.g.:
-#   ALLOWED_ORIGINS=https://clinical-trial-ui.vercel.app
-# Leave unset (or set to "*") for development / open access.
 _raw_origins = os.environ.get("ALLOWED_ORIGINS", "*")
 _origins: List[str] = (
     [o.strip() for o in _raw_origins.split(",") if o.strip()]
@@ -59,31 +70,80 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
-    allow_origin_regex=r"https://.*\.vercel\.app",  # permit all Vercel preview URLs
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
     allow_credentials=False,
 )
 
-# ── Module-level singletons ───────────────────────────────────────────────────
-# Load the dataset and instantiate the LLM client once at startup so the
-# heavy sentence-transformer model and FAISS index are not reloaded per request.
+# ── Lazy singletons ───────────────────────────────────────────────────────────
+# All module-level variables start as None / empty.  Nothing is loaded until
+# _ensure_loaded() is called by the first real request.  The startup event
+# does NOT call _ensure_loaded() so the process stays lightweight at boot.
 
 _llm_client: Optional[LLMClient] = None
 _raw_patients: list = []
 _trials_raw: list = []
+_loaded: bool = False          # guard so we only run init once
 
 
-def _ensure_loaded():
-    global _llm_client, _raw_patients, _trials_raw
-    if _llm_client is not None:
+def _timed(label: str):
+    """Context manager that prints a START / DONE line with elapsed seconds."""
+    class _Timer:
+        def __enter__(self):
+            print(f"[startup] {label}...", flush=True)
+            self._t0 = time.perf_counter()
+            return self
+
+        def __exit__(self, *_):
+            elapsed = time.perf_counter() - self._t0
+            print(f"[startup] {label} done ({elapsed:.2f}s)", flush=True)
+
+    return _Timer()
+
+
+def _ensure_loaded() -> None:
+    """
+    Initialise all lightweight singletons on first call; no-op thereafter.
+
+    Heavy resources (SentenceTransformer, FAISS index) are NOT loaded here —
+    they are loaded lazily inside RetrievalService on the first /screen call.
+    This function only handles the truly cheap operations:
+      - constructing LLMClient (no network call, no model weights)
+      - reading and parsing the ~5 MB JSON dataset
+    """
+    global _llm_client, _raw_patients, _trials_raw, _loaded
+    if _loaded:
         return
-    _llm_client = LLMClient(settings.llm)
-    raw = load_dataset(settings.paths.data)
-    dataset = raw if isinstance(raw, dict) else {}
-    _raw_patients = dataset.get("patients", raw if isinstance(raw, list) else [])
-    trials_root = dataset.get("trials", [])
-    _trials_raw = trials_root if isinstance(trials_root, list) else []
+
+    print("[startup] First request — initialising lightweight singletons", flush=True)
+    t_total = time.perf_counter()
+
+    with _timed("Constructing LLMClient"):
+        _llm_client = LLMClient(settings.llm)
+        # Note: the underlying LangChain client is NOT created here.
+        # It is created lazily inside LLMClient.client on first generate() call.
+
+    with _timed("Loading dataset JSON"):
+        raw = load_dataset(settings.paths.data)
+        dataset = raw if isinstance(raw, dict) else {}
+        _raw_patients = dataset.get("patients", raw if isinstance(raw, list) else [])
+        trials_root = dataset.get("trials", [])
+        _trials_raw = trials_root if isinstance(trials_root, list) else []
+
+    elapsed_total = time.perf_counter() - t_total
+    print(
+        f"[startup] Lightweight init complete ({elapsed_total:.2f}s) — "
+        f"{len(_raw_patients)} patients, {len(_trials_raw)} trials loaded.",
+        flush=True,
+    )
+    print(
+        "[startup] NOTE: SentenceTransformer + FAISS index will load on the "
+        "first /screen request (lazy). That request will be slower than subsequent ones.",
+        flush=True,
+    )
+
+    _loaded = True
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -111,12 +171,7 @@ def _latest_report(patient_id: str, extension: str) -> Path:
     """Return the most-recently written report file for a patient, or raise 404."""
     reports_dir = Path(settings.paths.reports)
     pdf_dir = reports_dir.parent / "report_pdfs"
-
-    if extension == ".md":
-        search_dir = reports_dir
-    else:
-        search_dir = pdf_dir
-
+    search_dir = reports_dir if extension == ".md" else pdf_dir
     candidates = sorted(
         search_dir.glob(f"{patient_id}_*{extension}"),
         key=lambda p: p.stat().st_mtime,
@@ -132,10 +187,7 @@ def _latest_report(patient_id: str, extension: str) -> Path:
 
 
 def _patient_summary(raw: dict) -> dict:
-    """
-    Convert a raw dataset patient into a JSON-serialisable summary dict.
-    Reuses parse_patient() so no duplication of parsing logic.
-    """
+    """Convert a raw dataset patient into a JSON-serialisable summary dict."""
     p = parse_patient(raw)
     demo = raw.get("demographics", {})
     return {
@@ -160,16 +212,35 @@ def _patient_summary(raw: dict) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Routes
+# Startup event
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
 async def startup_event():
-    _ensure_loaded()
+    """
+    Intentionally lightweight — do NOT load models or datasets here.
 
+    Render hits /health immediately after the process starts.  If we block
+    the event loop loading a 200 MB model, the health check times out and
+    Render kills the instance before it ever serves a request.
+
+    All heavy resources are deferred to the first real API call via
+    _ensure_loaded().
+    """
+    print("[startup] FastAPI startup complete — process is ready (lazy mode).", flush=True)
+    print(f"[startup] LLM provider: {settings.llm.provider}, model: {settings.llm.model}", flush=True)
+    print(f"[startup] Embedding model: {settings.embeddings.model}", flush=True)
+    print(f"[startup] Data path: {settings.paths.data}", flush=True)
+    print(f"[startup] Vector store: {settings.paths.vector_store}", flush=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Routes
+# ─────────────────────────────────────────────────────────────────────────────
 
 @app.get("/health", summary="Health check for Render")
 def health_check():
+    """Returns immediately without touching any heavy resource."""
     return JSONResponse({"status": "ok"})
 
 
@@ -183,25 +254,35 @@ def list_patients():
 def screen_patient(body: ScreenRequest):
     _ensure_loaded()
 
-    # 1. Parse patient from the real dataset
+    t0 = time.perf_counter()
+
+    # 1. Parse patient
     raw_patient = _find_raw_patient(body.patient_id)
     patient = parse_patient(raw_patient)
 
     # 2. Parse all trials
-    trials = parse_trials(_trials_raw)
+    with _timed(f"Parsing trials for patient {body.patient_id}"):
+        trials = parse_trials(_trials_raw)
     if not trials:
         raise HTTPException(status_code=500, detail="Trial dataset is empty or failed to parse.")
 
-    # 3. Run the full LangGraph pipeline — no business logic here, just wiring
+    # 3. Run the full LangGraph pipeline
+    # Note: on the FIRST request this also triggers:
+    #   - LangChain client construction (LLMClient.client property)
+    #   - SentenceTransformer load (~200 MB, ~5–15 s on Render free tier)
+    #   - FAISS index load from disk (~1 MB, fast)
+    #   - LangGraph workflow compilation (once only, then cached)
     initial_state = AgentState(patient=patient, all_trials=trials)
     try:
+        print(f"[screen] Running pipeline for patient {body.patient_id}", flush=True)
         final_state = run_workflow(settings, _llm_client, initial_state)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Pipeline error: {exc}") from exc
 
+    elapsed = time.perf_counter() - t0
+    print(f"[screen] Pipeline complete for {body.patient_id} ({elapsed:.2f}s)", flush=True)
+
     # 4. Serialise AgentState → JSON-friendly dict
-    #    Use model_dump() on the Pydantic models so enums, dates, etc. are
-    #    converted to plain Python types automatically.
     result = {
         "patient":         patient.model_dump(mode="json"),
         "ranked_trials":   [r.model_dump(mode="json") for r in final_state.ranked_trials],
@@ -241,7 +322,7 @@ def get_report_pdf(patient_id: str):
     )
 
 
-# ── Entrypoint (used by Render: python api_server.py) ─────────────────────────
+# ── Entrypoint ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
