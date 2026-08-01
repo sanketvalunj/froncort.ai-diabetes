@@ -12,7 +12,7 @@ class LLMSettings(BaseModel):
 
 
 class EmbeddingSettings(BaseModel):
-    model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    model: str = "tfidf"
 
 
 class RetrievalSettings(BaseModel):

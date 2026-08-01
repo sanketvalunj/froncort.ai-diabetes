@@ -8,17 +8,16 @@ statement in this file.  We keep those statements to an absolute minimum:
 
   ALLOWED at module level   : FastAPI app creation, CORS middleware, Pydantic
                               request/response models, route *decorators*.
-  NOT ALLOWED at module level: anything that imports sentence_transformers,
-                              faiss, langgraph, langchain, or reads files.
+  NOT ALLOWED at module level: anything that imports langgraph,
+                              langchain, or reads files.
 
 All heavy resources are initialised inside _ensure_loaded(), which is called
 by the first real API request — never during import.
 
 Memory budget (Render free tier: 512 MB)
 -----------------------------------------
-  Import time           : ~60 MB  (FastAPI + Pydantic + structlog only)
-  After first /screen   : ~350 MB (+ LangChain client + SentenceTransformer
-                                     + FAISS index + compiled LangGraph)
+  Import time           : ~40 MB  (FastAPI + Pydantic + structlog only)
+  After first /screen   : ~100 MB (+ LangChain client + TF-IDF index + compiled LangGraph)
   Subsequent requests   : no additional allocation (everything cached)
 """
 
@@ -145,7 +144,7 @@ def _ensure_loaded() -> None:
         flush=True,
     )
     print(
-        "[startup] NOTE: SentenceTransformer + FAISS + LangGraph will load "
+        "[startup] NOTE: TF-IDF index + LangGraph will load "
         "on the first /screen request (lazy).",
         flush=True,
     )

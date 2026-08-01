@@ -71,9 +71,8 @@ def _format_evidence(evidence_list) -> str:
             name_part = e.text.split(":", 1)[-1].strip() if ":" in e.text else e.text.strip()
             label = f"Medication: {name_part}" if name_part else "Medication"
         elif "lab" in src or any(kw in text_lower for kw in ("hba1c", "a1c", "egfr", "gfr", "bmi", "glucose", "creatinine")):
-            # e.g. "HbA1c (2026-04-23)"
-            name_part = e.text.split(":", 1)[0].strip() if ":" in e.text else e.source.upper()
-            label = name_part
+            name_part = e.text.split(":", 1)[0].strip() if ":" in e.text else e.source
+            label = f"{name_part} (lab_results)"
             if e.date:
                 label += f" ({e.date})"
         else:
