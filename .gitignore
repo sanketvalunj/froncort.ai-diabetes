@@ -38,8 +38,8 @@ artifacts/logs/*.jsonl
 artifacts/metrics/*.json
 
 # Vector store binaries
-data/vector_store/*.faiss
-data/vector_store/*.pkl
+#data/vector_store/*.faiss
+#data/vector_store/*.pkl
 
 # macOS
 .DS_Store

@@ -6,8 +6,8 @@ from pydantic_settings import BaseSettings
 
 
 class LLMSettings(BaseModel):
-    provider: str = "openai"
-    model: str = "gpt-4o-mini"
+    provider: str = "google"
+    model: str = "gemini-2.0-flash"
     temperature: float = 0.0
 
 

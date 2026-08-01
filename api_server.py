@@ -59,8 +59,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
     allow_origin_regex=r"https://.*\.vercel\.app",
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_methods=["*"],
+    allow_headers=["*"],
     allow_credentials=False,
 )
 
@@ -182,6 +182,23 @@ def _latest_report(patient_id: str, extension: str) -> Path:
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )
+    if not candidates and extension == ".pdf":
+        md_candidates = sorted(
+            reports_dir.glob(f"{patient_id}_*.md"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if md_candidates:
+            from app.reports.pdf_generator import md_file_to_pdf
+            pdf_dir = reports_dir.parent / "report_pdfs"
+            try:
+                return md_file_to_pdf(md_candidates[0], pdf_dir)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to generate PDF on-the-fly: {exc}",
+                ) from exc
+
     if not candidates:
         raise HTTPException(
             status_code=404,
