@@ -1,7 +1,7 @@
 import json
 import os
 
-from config.settings import LLMSettings
+from config.settings import LLMSettings, settings as _app_settings
 
 
 class LLMParseError(Exception):
@@ -20,12 +20,12 @@ class LLMClient:
 
             if provider == "google":
                 from langchain_google_genai import ChatGoogleGenerativeAI
-
-                api_key = os.environ.get("GOOGLE_API_KEY", "")
+                # Pull key from: app settings (loaded from .env) → raw environment
+                api_key = _app_settings.google_api_key or os.environ.get("GOOGLE_API_KEY", "")
                 if not api_key:
                     raise ValueError(
-                        "GOOGLE_API_KEY is not set in the environment. "
-                        "Add it to your Render environment variables."
+                        "GOOGLE_API_KEY is not set. Add it to .env locally "
+                        "or to Render environment variables in production."
                     )
                 self._client = ChatGoogleGenerativeAI(
                     model=self.settings.model,
@@ -35,12 +35,11 @@ class LLMClient:
 
             elif provider == "xai":
                 from langchain_xai import ChatXAI
-
-                api_key = os.environ.get("XAI_API_KEY", "")
+                api_key = _app_settings.xai_api_key or os.environ.get("XAI_API_KEY", "")
                 if not api_key:
                     raise ValueError(
-                        "XAI_API_KEY is not set in the environment. "
-                        "Add it to your Render environment variables."
+                        "XAI_API_KEY is not set. Add it to .env locally "
+                        "or to Render environment variables in production."
                     )
                 self._client = ChatXAI(
                     model=self.settings.model,

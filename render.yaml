@@ -3,7 +3,7 @@ services:
     name: clinical-trial-api
     runtime: python
     rootDir: .
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && python main.py index
     startCommand: uvicorn api_server:app --host 0.0.0.0 --port $PORT --limit-concurrency 1
     healthCheckPath: /health
     envVars:
