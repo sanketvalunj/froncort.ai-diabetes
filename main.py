@@ -1,3 +1,4 @@
+# CLI entrypoint for running the clinical trial agent.
 """
 Clinical Trial Pre-Screening Assistant — CLI entrypoint.
 

@@ -1,3 +1,4 @@
+# Handles retrieval of relevant trial criteria using embeddings.
 from typing import List
 
 from app.models.evaluation import Evidence

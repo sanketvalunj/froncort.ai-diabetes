@@ -1,3 +1,4 @@
+# Pydantic models representing clinical trial data structures.
 from pydantic import BaseModel
 from typing import List
 from enum import Enum

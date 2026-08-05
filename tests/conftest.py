@@ -1,3 +1,4 @@
+# Pytest configuration and shared fixtures for testing.
 import pytest
 from app.models.patient import Patient, LabResult
 from app.models.trial import Trial, Criterion, CriterionType

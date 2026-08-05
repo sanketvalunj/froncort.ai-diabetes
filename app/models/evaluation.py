@@ -1,3 +1,4 @@
+# Pydantic models for evaluation results and trial rankings.
 from pydantic import BaseModel, Field
 from typing import List, Literal
 from enum import Enum

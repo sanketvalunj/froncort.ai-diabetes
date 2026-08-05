@@ -1,3 +1,4 @@
+# Initialization for the models module.
 from .patient import Patient, LabResult
 from .trial import Trial, Criterion, CriterionType
 from .evaluation import (

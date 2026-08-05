@@ -1,3 +1,4 @@
+# Manages the FAISS vector store for semantic search.
 """
 FAISSVectorStore — lightweight TF-IDF + Cosine Similarity vector store using scikit-learn.
 

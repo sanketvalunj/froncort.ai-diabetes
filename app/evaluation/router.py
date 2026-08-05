@@ -1,3 +1,4 @@
+# Routes criteria to the appropriate evaluation engine (LLM or Rule).
 from typing import List
 
 from app.evaluation.llm_engine import LLMEvaluator

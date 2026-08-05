@@ -1,3 +1,4 @@
+# Generates the content for the clinical trial screening report.
 """
 ReportGenerator — produces the coordinator-facing Markdown eligibility report.
 

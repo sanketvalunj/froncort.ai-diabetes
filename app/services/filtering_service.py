@@ -1,3 +1,4 @@
+# Filters out trials based on basic requirements before deep evaluation.
 import re
 from typing import Dict, List, Tuple
 

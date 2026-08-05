@@ -1,3 +1,4 @@
+# Contains prompt templates for LLM interactions.
 # Compact criterion-evaluation prompt.
 # Target: 300–500 input tokens total (template ~80 tokens + criterion + patient fields + evidence).
 # Response shape: state / reason (≤20 words) / evidence_ids only — no verbose fields.

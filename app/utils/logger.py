@@ -1,3 +1,4 @@
+# Configuration for structured logging across the application.
 import logging
 import os
 import sys

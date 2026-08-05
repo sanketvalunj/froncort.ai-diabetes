@@ -1,3 +1,4 @@
+# Provides sentence embeddings for vector search.
 """
 EmbeddingService — lightweight TF-IDF text representation service using scikit-learn.
 

@@ -1,3 +1,4 @@
+# Orchestrates the evaluation of patient data against trial criteria.
 from typing import Dict, List
 
 from app.evaluation.router import EvaluatorRouter

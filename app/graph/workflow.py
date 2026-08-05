@@ -1,3 +1,4 @@
+# Defines the LangGraph workflow for clinical trial screening.
 """
 LangGraph workflow — build once, run many times.
 

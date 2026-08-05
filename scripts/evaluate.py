@@ -1,3 +1,4 @@
+# CLI script for evaluating the agent's performance against test cases.
 """
 Evaluation suite for the Clinical Trial Pre-Screening Assistant.
 

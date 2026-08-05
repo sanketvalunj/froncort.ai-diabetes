@@ -1,3 +1,4 @@
+# Evaluates complex clinical criteria using an LLM.
 """
 LLM-based criterion evaluator — token-optimised.
 

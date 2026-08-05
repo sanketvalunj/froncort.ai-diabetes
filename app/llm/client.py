@@ -1,3 +1,4 @@
+# Client wrapper for interacting with the LLM API.
 import json
 import os
 

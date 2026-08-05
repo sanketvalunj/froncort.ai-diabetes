@@ -1,3 +1,4 @@
+# Converts markdown reports into PDF format.
 """
 MarkdownPDFGenerator — converts a pre-generated Markdown report to a PDF artifact.
 

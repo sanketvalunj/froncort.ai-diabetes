@@ -1,3 +1,4 @@
+# Pydantic models representing patient profiles and medical data.
 from pydantic import BaseModel
 from datetime import date as DateType
 from typing import List, Optional

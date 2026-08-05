@@ -1,3 +1,4 @@
+# Manages application settings and environment variables.
 from pathlib import Path
 from typing import Optional
 

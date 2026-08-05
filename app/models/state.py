@@ -1,3 +1,4 @@
+# Pydantic model representing the state of the LangGraph workflow.
 from pydantic import BaseModel, Field
 from typing import List, Dict, Optional
 from datetime import datetime, timezone

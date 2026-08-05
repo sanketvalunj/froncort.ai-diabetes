@@ -1,3 +1,4 @@
+# Handles computation and storage of pipeline execution metrics.
 import json
 from datetime import datetime, timezone
 from pathlib import Path

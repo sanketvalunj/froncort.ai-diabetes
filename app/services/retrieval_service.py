@@ -1,3 +1,4 @@
+# Orchestrates the retrieval of relevant evidence and trials.
 """
 RetrievalService — Stage 2 of the pipeline.
 

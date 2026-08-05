@@ -1,3 +1,4 @@
+# Parses raw patient and trial JSON data into Pydantic models.
 """
 Parse the real JSON dataset into typed domain models.
 

@@ -1,3 +1,4 @@
+# Unit tests for the report generation module.
 """Tests for the ReportGenerator (Step 4 — coordinator-facing format)."""
 
 import pytest

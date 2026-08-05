@@ -1,3 +1,4 @@
+# Ranks evaluated clinical trials based on patient fit.
 """
 RankingService — Stage 4 of the pipeline.
 

@@ -1,3 +1,4 @@
+# Unit tests for the evaluation engines.
 """Tests for the evaluation layer: RuleEngine, LLMEvaluator, EvaluatorRouter."""
 
 import pytest

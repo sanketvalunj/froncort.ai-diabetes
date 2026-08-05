@@ -1,3 +1,4 @@
+# FastAPI server exposing the clinical trial screening pipeline.
 """
 FastAPI wrapper around the LangGraph clinical-trial pipeline.
 

@@ -1,3 +1,4 @@
+# Unit tests for the metrics module.
 """Tests for the metrics module."""
 
 import json

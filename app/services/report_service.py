@@ -1,3 +1,4 @@
+# Generates markdown and PDF reports for trial screening results.
 from datetime import datetime, timezone
 from pathlib import Path
 

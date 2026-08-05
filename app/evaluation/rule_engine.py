@@ -1,3 +1,4 @@
+# Evaluates deterministic criteria like age and simple lab results.
 """
 Rule-based criterion evaluator.
 

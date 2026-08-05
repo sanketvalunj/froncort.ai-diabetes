@@ -1,3 +1,4 @@
+# CLI script to build the FAISS vector index from trial data.
 """
 Build the FAISS vector index from the trial dataset.
 
