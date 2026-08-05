@@ -15,4 +15,5 @@ services:
       - key: GOOGLE_API_KEY
         sync: false
       - key: ALLOWED_ORIGINS
+      
         sync: false   # e.g. https://your-app.vercel.app
